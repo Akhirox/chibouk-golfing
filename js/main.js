@@ -65,6 +65,12 @@ const game = new Game(world, canvas, {
   onGameEvent(type, data) { chars.react(type, data); },
   onPos(x, y, z, m) {
     if (S.mode === 'solo' || S.phase !== 'playing') return;
+    // via le relais public : un peu moins de messages
+    if (S.client && S.client.kind === 'relay') {
+      const now = performance.now();
+      if (m && now - (S.lastPos || 0) < 110) return;
+      S.lastPos = now;
+    }
     toHost({ t: 'pos', x: +x.toFixed(3), y: +y.toFixed(3), z: +z.toFixed(3), m });
   },
 });
@@ -127,7 +133,7 @@ function keepParams() {
   // conserve les paramètres de test (serveur PeerJS local)
   const q = new URLSearchParams(location.search);
   const out = new URLSearchParams();
-  for (const k of ['peerhost', 'peerport', 'peerpath', 'peersecure']) if (q.get(k)) out.set(k, q.get(k));
+  for (const k of ['peerhost', 'peerport', 'peerpath', 'peersecure', 'peerdebug', 'mqtt', 'transport']) if (q.get(k)) out.set(k, q.get(k));
   const s = out.toString();
   return s ? `?${s}` : '';
 }
@@ -252,19 +258,22 @@ async function joinRoom(code) {
   const client = new ClientNet({
     onMessage: onServer,
     onClose: (reason) => { if (S.client === client) backToMenu(reason); },
+    onStatus: (text) => { if (S.client === client && S.phase === 'menu') menuError(text); },
   });
   S.client = client;
   try {
-    await client.join(code);
+    // le client répète son « hello » jusqu'à la réponse de l'hôte
+    await client.join(code, { t: 'hello', name: profile.name, color: profile.color });
   } catch (err) {
     setBusy(false);
     if (S.client === client) backToMenu(errorText(err));
     return;
   }
   setBusy(false);
+  if (S.client !== client) return;
+  menuError('');
   S.code = code;
   history.replaceState(null, '', `${location.pathname}${withSalon(code)}`);
-  client.send({ t: 'hello', name: profile.name, color: profile.color });
 }
 
 function withSalon(code) {
@@ -307,6 +316,7 @@ function renderLobby() {
     const li = document.createElement('li');
     if (p.id === S.selfId) li.classList.add('me');
     li.innerHTML = `<span class="dot" style="background:${p.color}"></span><span>${escapeHtml(p.name)}</span>`
+      + `${p.relay ? '<span class="via" title="Connexion directe impossible : messages transmis par un relais public">relais</span>' : ''}`
       + `${p.host && !solo ? '<span class="tag">Hôte</span>' : p.id === S.selfId ? '<span class="tag">Toi</span>' : ''}`;
     ul.appendChild(li);
   }

@@ -2,7 +2,7 @@
 
 Mini golf 3D low poly dans le navigateur, avec des parcours de 9 trous générés à chaque partie
 et un multijoueur en pair-à-pair (jusqu'à 8 joueurs), sans serveur de jeu.
-Three.js pour le rendu, PeerJS (WebRTC) pour le réseau, aucune étape de compilation.
+Three.js pour le rendu, WebRTC (PeerJS) pour le réseau avec un relais public de secours, aucune étape de compilation.
 
 ## Mettre en ligne sur GitHub Pages
 
@@ -126,15 +126,29 @@ et capture au trou réaliste : trop rapide, la balle saute par-dessus ou tourne 
 
 ### Multijoueur sans serveur
 
-Les joueurs se connectent directement entre eux en WebRTC. Seule la poignée de main initiale passe par
-le service public et gratuit de [PeerJS](https://peerjs.com/), qui sert d'annuaire (et de relais TURN
-si deux réseaux ne peuvent pas se joindre directement). Le navigateur de l'hôte fait office d'arbitre :
-il génère les trous, tient les scores et relaie les positions des balles.
+Aucun serveur de jeu à héberger. Le navigateur de l'hôte fait office d'arbitre : il génère les trous,
+tient les scores et relaie les positions des balles.
 
-Si l'hôte quitte, la partie s'arrête pour tout le monde.
+1. **Connexion directe (WebRTC)** : les joueurs se connectent entre eux. La poignée de main passe par
+   le service public et gratuit de [PeerJS](https://peerjs.com/), qui sert seulement d'annuaire.
+2. **Relais de secours** : quand la connexion directe est impossible (réseau d'entreprise, 4G, box
+   stricte…), le jeu bascule tout seul, après quelques secondes, sur un relais public MQTT gratuit
+   (test.mosquitto.org, puis broker.emqx.io, puis broker.hivemq.com). Les messages importants sont
+   numérotés et renvoyés tant qu'ils ne sont pas confirmés : rien ne se perd. Dans le salon, un
+   joueur passé par ce chemin porte la mention « relais ».
 
-Pour utiliser votre propre serveur PeerJS (`npx peerjs --port 9000`), ajoutez à l'adresse :
-`?peerhost=mon-serveur&peerport=9000&peersecure=1`.
+Si l'hôte quitte, la partie s'arrête pour tout le monde. Les relais publics sont partagés : n'y faites
+pas transiter d'informations sensibles (ici, seulement des pseudos et des positions de balles).
+
+En cas de souci de connexion, le message d'erreur précise la cause (salon introuvable, hôte qui ne
+répond plus, réseau qui bloque tout). Le site fonctionne en `http://` comme en `https://` ; en `https://`,
+le bouton « Copier le lien » copie directement le lien (sinon il l'affiche).
+
+Paramètres d'adresse utiles pour les tests :
+
+- `?transport=relay` (relais seulement) ou `?transport=rtc` (direct seulement) ;
+- `?mqtt=wss://mon-broker:8084/mqtt` pour utiliser son propre relais MQTT ;
+- `?peerhost=mon-serveur&peerport=9000&peersecure=1` pour son propre serveur PeerJS (`npx peerjs --port 9000`).
 
 ## Structure
 
@@ -151,7 +165,7 @@ js/gen-worker.js      génération en arrière-plan
 js/render.js          rendu Three.js low poly, décors par thème, eau et éclaboussures
 js/characters.js      personnages : chargement, balades, animations, interactions
 js/session.js         logique de l'hôte (salon, enchaînement des trous, scores)
-js/net.js             réseau pair-à-pair (PeerJS)
+js/net.js             réseau : WebRTC (PeerJS) + relais MQTT de secours
 js/score.js           termes de golf et totaux
 js/audio.js           sons synthétisés
 lib/                  three.js r185 (+ GLTFLoader, meshopt, SkeletonUtils) et PeerJS 1.5.5 (licences MIT incluses)

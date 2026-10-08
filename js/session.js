@@ -33,6 +33,7 @@ export class HostSession {
     return [...this.players.values()].map((p) => ({
       id: p.id, name: p.name, color: p.color, host: p.host,
       scores: p.scores, strokes: p.strokes, done: p.done, connected: p.connected,
+      relay: !!(this.net && !p.host && this.net.routeKind(p.id) === 'relay'),
     }));
   }
 
@@ -73,6 +74,14 @@ export class HostSession {
     switch (msg.t) {
       case 'hello': {
         if (from === HOST_ID) return;
+        if (p) {
+          // « hello » répété (le client insiste tant qu'il n'a pas de réponse) : on renvoie l'accueil
+          p.connected = true;
+          this.net?.sendTo(from, { t: 'welcome', id: from });
+          if (this.phase === 'lobby') this.sendLobby();
+          else this.sendState();
+          return;
+        }
         if (this.phase !== 'lobby') { this.net?.kick(from, { t: 'refuse', reason: 'Partie déjà en cours. Attends la prochaine !' }); return; }
         if (this.players.size >= MAX_PLAYERS) { this.net?.kick(from, { t: 'refuse', reason: 'Salon complet (8 joueurs max).' }); return; }
         this.addPlayer(from, msg.name, msg.color);
