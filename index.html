@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chibouk Golf</title>
+  <meta name="description" content="Mini golf multijoueur en pair-à-pair, avec des parcours générés à l'infini.">
+  <meta name="theme-color" content="#0c0c0d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c0c0d'/%3E%3Cpath d='M30 10v34' stroke='%23fff' stroke-width='3'/%3E%3Cpath d='M31 10l18 6-18 6z' fill='%23ff7a1a'/%3E%3Ccircle cx='22' cy='46' r='8' fill='%23ff7a1a'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">{ "imports": { "three": "./lib/three.module.min.js" } }</script>
+  <script src="lib/peerjs.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="labels"></div>
+  <div id="vignette"></div>
+
+  <!-- ============ MENU ============ -->
+  <section id="menu" class="screen">
+    <div class="menu-panel">
+      <div class="logo" aria-label="Chibouk Golf">
+        <svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M30 6v40" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+          <path d="M31.5 7l20 7-20 7z" fill="#ff7a1a"/>
+          <ellipse cx="30" cy="52" rx="14" ry="3.2" fill="#ffffff" opacity=".14"/>
+          <circle cx="19" cy="45" r="7.5" fill="#ff7a1a"/>
+        </svg>
+        <div class="logo-text"><span>CHIBOUK</span><span class="accent">GOLF</span></div>
+      </div>
+      <p class="tagline">Mini golf entre amis.<br>Neuf trous inédits à chaque partie.</p>
+
+      <div class="menu-actions">
+        <button id="btn-solo" class="btn primary">Jouer en solo</button>
+        <button id="btn-host" class="btn">Créer un salon</button>
+        <div class="join-row">
+          <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Code du salon">
+          <button id="btn-join" class="btn">Rejoindre</button>
+        </div>
+      </div>
+      <p class="menu-error" id="menu-error" role="alert"></p>
+      <p class="menu-foot">Multijoueur en pair-à-pair · jusqu'à 8 joueurs</p>
+    </div>
+  </section>
+
+  <!-- ============ SALON ============ -->
+  <section id="lobby" class="screen hidden">
+    <div class="panel lobby-panel">
+      <header class="lobby-head">
+        <div>
+          <span class="kicker" id="lobby-kicker">Salon</span>
+          <h2 id="lobby-code">—</h2>
+        </div>
+        <button id="btn-copy" class="btn small">Copier le lien d'invitation</button>
+      </header>
+      <div class="lobby-grid">
+        <div class="profile">
+          <label class="field">
+            <span>Pseudo</span>
+            <input id="pseudo" maxlength="16" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="field">
+            <span>Couleur de ta balle</span>
+            <div id="swatches" class="swatches"></div>
+          </div>
+          <div class="preview-wrap"><div id="ball-preview" class="ball-preview"></div><div class="preview-shadow"></div></div>
+        </div>
+        <div class="players">
+          <h3>Joueurs <span id="player-count"></span></h3>
+          <ul id="player-list"></ul>
+        </div>
+      </div>
+      <footer class="lobby-foot">
+        <button id="btn-leave" class="btn ghost">Quitter</button>
+        <span id="lobby-wait" class="muted">En attente de l'hôte…</span>
+        <button id="btn-start" class="btn primary">Lancer · 9 trous</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ============ CHARGEMENT ============ -->
+  <section id="loading" class="screen hidden">
+    <div class="loader">
+      <div class="spinner"></div>
+      <p id="loading-text">Génération du parcours…</p>
+      <p class="muted small" id="loading-sub">Le PAR de chaque trou est estimé en simulant des coups.</p>
+    </div>
+  </section>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="hidden">
+    <div class="hud-hole panel">
+      <div class="hole-num"><small>Trou</small><b id="hud-hole">1</b><small id="hud-of">/ 9</small></div>
+      <div class="hud-stats">
+        <div><small>Par</small><b id="hud-par">3</b></div>
+        <div><small>Coups</small><b id="hud-strokes">0</b></div>
+        <div><small>Total</small><b id="hud-total">±0</b></div>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-buttons">
+        <button id="btn-card" class="icon-btn" title="Carte de score (Tab)" aria-label="Carte de score">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16M9 3v18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-view" class="icon-btn" title="Vue du trou (V)" aria-label="Vue du trou">
+          <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+        </button>
+        <button id="btn-mute" class="icon-btn" title="Son" aria-label="Son"></button>
+        <button id="btn-quit" class="icon-btn" title="Quitter la partie" aria-label="Quitter">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="hud-players panel" id="hud-players"></div>
+    </div>
+    <div class="power" id="power">
+      <div class="power-track"><div class="power-fill" id="power-fill"></div></div>
+      <span id="power-val">0 %</span>
+    </div>
+    <div class="hint" id="hint">
+      <span><b>Clic gauche</b> maintenu + glisser : viser et doser</span>
+      <span><b>Clic droit</b> / flèches : caméra</span>
+      <span><b>Molette</b> : zoom</span>
+      <span><b>V</b> : vue du trou · <b>C</b> : recentrer · <b>Tab</b> : scores</span>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="big-term" id="big-term"><b></b><small></small></div>
+  </div>
+
+  <div id="notices"></div>
+
+  <!-- ============ CARTE DE SCORE / FIN ============ -->
+  <section id="board" class="overlay hidden">
+    <div class="panel board-panel">
+      <header class="board-head">
+        <div>
+          <span class="kicker" id="board-kicker">Trou 1</span>
+          <h2 id="board-title">Carte de score</h2>
+        </div>
+        <span id="board-timer" class="muted"></span>
+      </header>
+      <div id="podium" class="podium"></div>
+      <div class="table-wrap"><table id="board-table" class="scorecard"></table></div>
+      <footer class="board-foot" id="board-foot"></footer>
+    </div>
+  </section>
+
+  <noscript><p class="noscript">Chibouk Golf a besoin de JavaScript.</p></noscript>
+</body>
+</html>
