@@ -10,26 +10,31 @@ export const THEME_STYLES = {
     skyTop: 0x5fb4ff, skyBottom: 0xd8f0ff, fog: 0xcde9ff,
     ground: 0x7cc35e, ground2: 0x68b24f, carpet: 0x2fa052, wall: 0xf1e6cf, base: 0xb98b5a, trim: 0xff7a1a,
     sun: 0xfff1d8, sunI: 2.3, hemiSky: 0xd6ecff, hemiGround: 0x62904a, hemiI: 1.5, clouds: true,
+    water: 0x3aa6df,
   },
   automne: {
     skyTop: 0xf0a25e, skyBottom: 0xffe2b8, fog: 0xf6d3a6,
     ground: 0xb6a050, ground2: 0xa48c3f, carpet: 0x3b9a4c, wall: 0x6f4b33, base: 0x4f3424, trim: 0xff7a1a,
     sun: 0xffd9a8, sunI: 2.2, hemiSky: 0xffe0bd, hemiGround: 0x8a6a3a, hemiI: 1.45, clouds: true,
+    water: 0x3b8fc4,
   },
   desert: {
     skyTop: 0x6fb8e8, skyBottom: 0xffe7c2, fog: 0xf7dfb8,
     ground: 0xe6c487, ground2: 0xd8b170, carpet: 0x23927a, wall: 0xc8693a, base: 0x9a4c2b, trim: 0xfff0d6,
     sun: 0xfff0d0, sunI: 2.5, hemiSky: 0xfff3dc, hemiGround: 0xc2965a, hemiI: 1.4, clouds: false,
+    water: 0x22b5c2,
   },
   neige: {
     skyTop: 0x8ec5f2, skyBottom: 0xeef6ff, fog: 0xe4f0fb,
     ground: 0xf4f8fc, ground2: 0xe2ebf3, carpet: 0x2d7fd0, wall: 0x8b5a3c, base: 0x5d3c28, trim: 0xff7a1a,
     sun: 0xffffff, sunI: 2.0, hemiSky: 0xeaf4ff, hemiGround: 0xb9c8d6, hemiI: 1.6, clouds: true,
+    water: 0x6fd3e6,
   },
   crepuscule: {
     skyTop: 0x1d1233, skyBottom: 0xa8524e, fog: 0x4a2c44,
     ground: 0x3a5a45, ground2: 0x2f4c3a, carpet: 0x34a066, wall: 0x1c1c1f, base: 0x111113, trim: 0xff7a1a,
     sun: 0xffb27a, sunI: 2.1, hemiSky: 0xb79ad0, hemiGround: 0x3a3a46, hemiI: 1.5, clouds: false, stars: true, lamps: true,
+    water: 0x2d6aa6,
   },
 };
 
@@ -260,7 +265,7 @@ export class World {
     this.sun.position.set(cx - 10, 18, cz + 7);
     this.sun.target.position.set(cx, 0, cz);
     const sc = this.sun.shadow.camera;
-    sc.left = -ext - 4; sc.right = ext + 4; sc.top = ext + 4; sc.bottom = -ext - 4;
+    sc.left = -ext - 6; sc.right = ext + 6; sc.top = ext + 6; sc.bottom = -ext - 6;
     sc.near = 1; sc.far = 60;
     sc.updateProjectionMatrix();
 
@@ -362,6 +367,10 @@ export class World {
       sm.receiveShadow = true;
       group.add(sm);
     }
+
+    // eau sur le parcours
+    this.waterAnims = [];
+    if (course.waters.length) this._courseWater(course, group, st);
 
     // tapis de départ
     {
@@ -471,6 +480,213 @@ export class World {
     this.animated.push((t) => { cloth.rotation.y = Math.sin(t * 2.1) * 0.35 + 0.4; });
   }
 
+  // --------------------------------------------------------------- eau
+  _courseWater(course, group, st) {
+    const bedCol = new THREE.Color(st.water).multiplyScalar(0.42);
+    const bedMat = new THREE.MeshLambertMaterial({ color: bedCol, flatShading: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const bankMat = new THREE.MeshLambertMaterial({ color: 0xd9cdb4, flatShading: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: st.water, transparent: true, opacity: 0.78, roughness: 0.14, metalness: 0.05, flatShading: true, depthWrite: false,
+    });
+    for (const w of course.waters) {
+      const c = w.cell;
+      const H = c.level;
+      // points de la forme (grille) dans le repère local
+      const pts = [];
+      let nu, nv;
+      if (w.type === 'pond') {
+        nu = 22; nv = 3;
+        for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+          const a = (i / nu) * Math.PI * 2, rr = (w.r * j) / nv;
+          pts.push([w.x + Math.cos(a) * rr, w.z + Math.sin(a) * rr, j === nv]);
+        }
+      } else {
+        nu = 4; nv = 10;
+        const lx = -w.az, lz = w.ax;
+        for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+          const u = -w.ha + (2 * w.ha * i) / nu, v = -TILE / 2 + (TILE * j) / nv;
+          pts.push([w.x + w.ax * u + lx * v, w.z + w.az * u + lz * v, i === 0 || i === nu]);
+        }
+      }
+      const mk = (y) => {
+        const gb = new Geo();
+        const P = (i, j) => { const q = pts[j * (nu + 1) + i]; return [q[0], y, q[1]]; };
+        for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+          gb.quad(P(i, j), P(i + 1, j), P(i + 1, j + 1), P(i, j + 1), [1, 1, 1], [0, 1, 0]);
+        }
+        const g = gb.build();
+        g.deleteAttribute('color');
+        return g;
+      };
+      const bed = new THREE.Mesh(mk(H + 0.002), bedMat);
+      bed.receiveShadow = true;
+      const geo = mk(H + 0.008);
+      const surf = new THREE.Mesh(geo, waterMat);
+      surf.renderOrder = 2;
+      group.add(bed, surf);
+      // berges en pierres claires
+      const bank = new Geo();
+      if (w.type === 'pond') {
+        const K = 26;
+        for (let k = 0; k < K; k++) {
+          const a0 = (k / K) * Math.PI * 2, a1 = ((k + 1) / K) * Math.PI * 2;
+          const P = (a, rr, y) => [w.x + Math.cos(a) * rr, y, w.z + Math.sin(a) * rr];
+          bank.quad(P(a0, w.r - 0.01, H + 0.012), P(a0, w.r + 0.05, H + 0.012), P(a1, w.r + 0.05, H + 0.012), P(a1, w.r - 0.01, H + 0.012), [0.85, 0.8, 0.7], [0, 1, 0]);
+        }
+      } else {
+        const lx = -w.az, lz = w.ax;
+        for (const sgn of [-1, 1]) {
+          const u0 = sgn * (w.ha - 0.01), u1 = sgn * (w.ha + 0.05);
+          const P = (u, v) => [w.x + w.ax * u + lx * v, H + 0.012, w.z + w.az * u + lz * v];
+          bank.quad(P(u0, -TILE / 2), P(u1, -TILE / 2), P(u1, TILE / 2), P(u0, TILE / 2), [0.85, 0.8, 0.7], [0, 1, 0]);
+        }
+      }
+      const bm = new THREE.Mesh(bank.build(), bankMat);
+      bm.receiveShadow = true;
+      group.add(bm);
+      // vagues : on anime les sommets de la surface
+      const pos = geo.attributes.position;
+      const base = Float32Array.from(pos.array);
+      this.waterAnims.push((t) => {
+        for (let k = 0; k < pos.count; k++) {
+          const x = base[k * 3], z = base[k * 3 + 2];
+          pos.array[k * 3 + 1] = base[k * 3 + 1] + 0.0035 * (Math.sin(x * 9 + t * 2.3) + Math.sin(z * 11 - t * 1.9));
+        }
+        pos.needsUpdate = true;
+      });
+    }
+  }
+
+  _decorPond(p, group, st, theme) {
+    const frozen = theme === 'neige';
+    const K = 28, M = 4;
+    const geo = new Geo();
+    const rng = new RNG(Math.floor(p.x * 1000 + p.z * 7));
+    const wob = Array.from({ length: K }, () => 1 + rng.float(-0.06, 0.06));
+    const P = (k, m) => {
+      const a = ((k % K) / K) * Math.PI * 2, rr = (p.r * m) / M * wob[k % K];
+      return [p.x + Math.cos(a) * rr, p.level, p.z + Math.sin(a) * rr];
+    };
+    const c = col(frozen ? 0xcfeaf7 : st.water);
+    for (let k = 0; k < K; k++) for (let m = 0; m < M; m++) {
+      if (m === 0) geo.tri(P(k, 0), P(k, 1), P(k + 1, 1), c, [0, 1, 0]);
+      else geo.quad(P(k, m), P(k, m + 1), P(k + 1, m + 1), P(k + 1, m), c, [0, 1, 0]);
+    }
+    const mat = frozen
+      ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.1, flatShading: true })
+      : new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: 0.85, roughness: 0.12, flatShading: true, depthWrite: false });
+    const g = geo.build();
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 2;
+    group.add(mesh);
+    if (!frozen) {
+      const pos = g.attributes.position, base = Float32Array.from(pos.array);
+      this.animated.push((t) => {
+        for (let k = 0; k < pos.count; k++) {
+          const x = base[k * 3], z = base[k * 3 + 2];
+          pos.array[k * 3 + 1] = base[k * 3 + 1] + 0.012 * (Math.sin(x * 2.1 + t * 1.3) + Math.sin(z * 2.7 - t * 1.1));
+        }
+        pos.needsUpdate = true;
+      });
+      // nénuphars et roseaux
+      const pad = new THREE.MeshLambertMaterial({ color: 0x4f9a3f, flatShading: true });
+      const reed = new THREE.MeshLambertMaterial({ color: theme === 'automne' ? 0x9a7a3a : 0x3f7a35, flatShading: true });
+      const flower = new THREE.MeshLambertMaterial({ color: 0xff9ac4, flatShading: true });
+      for (let k = 0; k < rng.int(3, 6); k++) {
+        const a = rng.float(0, Math.PI * 2), rr = rng.float(0.2, 0.75) * p.r, s = rng.float(0.16, 0.28);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(s, s, 0.015, 9, 1, false, 0.3, Math.PI * 1.8), pad);
+        m.position.set(p.x + Math.cos(a) * rr, p.level + 0.02, p.z + Math.sin(a) * rr);
+        m.rotation.y = rng.float(0, Math.PI * 2);
+        group.add(m);
+        if (rng.chance(0.4)) {
+          const f = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05, 0), flower);
+          f.position.set(m.position.x, p.level + 0.06, m.position.z);
+          group.add(f);
+        }
+      }
+      for (let k = 0; k < rng.int(2, 4); k++) {
+        const a = rng.float(0, Math.PI * 2);
+        for (let q = 0; q < 5; q++) {
+          const rr = p.r * rng.float(0.9, 1.05), aa = a + rng.float(-0.2, 0.2), hgt = rng.float(0.4, 0.8);
+          const m = new THREE.Mesh(new THREE.ConeGeometry(0.025, hgt, 4), reed);
+          m.position.set(p.x + Math.cos(aa) * rr, p.level + hgt / 2 - 0.05, p.z + Math.sin(aa) * rr);
+          m.rotation.z = rng.float(-0.15, 0.15);
+          m.castShadow = true;
+          group.add(m);
+        }
+      }
+    }
+  }
+
+  // --------------------------------------------------------------- éclaboussures
+  _initFx() {
+    const n = 90;
+    this.drops = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial({ color: 0xeaf8ff, transparent: true, opacity: 0.9 }), n);
+    this.drops.frustumCulled = false;
+    this.drops.count = 0;
+    this.dropData = [];
+    this.scene.add(this.drops);
+    this.ripples = [];
+    const rg = new THREE.RingGeometry(0.8, 1, 24);
+    rg.rotateX(-Math.PI / 2);
+    for (let k = 0; k < 10; k++) {
+      const m = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+      m.visible = false;
+      m.renderOrder = 3;
+      this.scene.add(m);
+      this.ripples.push({ m, t: 1, life: 1, size: 0.3 });
+    }
+    this._dummy = new THREE.Object3D();
+  }
+
+  splash(x, y, z, strength = 1) {
+    if (!this.drops) this._initFx();
+    const k = Math.min(1.6, Math.max(0.25, strength));
+    const count = Math.round(6 + 10 * k);
+    for (let i = 0; i < count && this.dropData.length < 90; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (0.3 + Math.random() * 0.8) * k;
+      this.dropData.push({
+        x, y, z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: (1.0 + Math.random() * 1.4) * k,
+        s: 0.005 + Math.random() * 0.008, life: 0.45 + Math.random() * 0.35,
+      });
+    }
+    this.ripple(x, y, z, 0.25 + 0.25 * k);
+  }
+
+  ripple(x, y, z, size = 0.2) {
+    if (!this.drops) this._initFx();
+    const r = this.ripples.find((q) => q.t >= q.life) || this.ripples[0];
+    r.t = 0; r.life = 0.9; r.size = size;
+    r.m.position.set(x, y, z);
+    r.m.visible = true;
+  }
+
+  updateFx(dt) {
+    if (!this.drops) return;
+    const d = this._dummy;
+    let n = 0;
+    this.dropData = this.dropData.filter((p) => (p.life -= dt) > 0);
+    for (const p of this.dropData) {
+      p.vy -= 9.81 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      d.position.set(p.x, p.y, p.z);
+      d.scale.setScalar(p.s * Math.min(1, p.life * 3));
+      d.updateMatrix();
+      this.drops.setMatrixAt(n++, d.matrix);
+    }
+    this.drops.count = n;
+    this.drops.instanceMatrix.needsUpdate = true;
+    for (const r of this.ripples) {
+      if (r.t >= r.life) { r.m.visible = false; continue; }
+      r.t += dt;
+      const k = r.t / r.life;
+      const s = r.size * (0.3 + k * 1.4);
+      r.m.scale.set(s, 1, s);
+      r.m.material.opacity = 0.55 * (1 - k);
+    }
+  }
+
   setFlagOpacity(o) {
     if (!this.flag) return;
     for (const m of this.flag.mats) { m.opacity = o; m.depthWrite = o > 0.9; }
@@ -568,11 +784,36 @@ export class World {
     const x0 = b.minX - M, x1 = b.maxX + M, z0 = b.minZ - M, z1 = b.maxZ + M;
     const noise = makeNoise((course.def.decorSeed || 7) + 11);
     const amp = course.def.theme === 'desert' ? 1.1 : 0.7;
-    this.groundHeight = (x, z) => {
+    const baseHeight = (x, z) => {
       const d = this._courseDist(course, x, z);
       const fade = Math.min(1, Math.max(0, (d - 1.2) / 5));
       const n = noise(x * 0.12, z * 0.12) * 0.7 + noise(x * 0.35 + 9, z * 0.35 - 4) * 0.3;
       return GROUND_Y - 0.03 + (n - 0.35) * amp * fade + fade * fade * 0.4;
+    };
+    // mares décoratives autour du parcours
+    const prng = new RNG((course.def.decorSeed || 7) + 99);
+    this.ponds = [];
+    const nPonds = prng.int(1, course.def.theme === 'desert' ? 1 : 2);
+    for (let k = 0, tries = 0; k < nPonds && tries < 60; tries++) {
+      const r = prng.float(1.6, 2.8);
+      const x = prng.float(b.minX - 12, b.maxX + 12), z = prng.float(b.minZ - 12, b.maxZ + 12);
+      if (this._courseDist(course, x, z) < r + 2.2) continue;
+      if (this.ponds.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + r + 2)) continue;
+      let rim = Infinity;
+      for (let a = 0; a < 16; a++) rim = Math.min(rim, baseHeight(x + Math.cos(a / 16 * Math.PI * 2) * r * 1.1, z + Math.sin(a / 16 * Math.PI * 2) * r * 1.1));
+      this.ponds.push({ x, z, r, level: rim - 0.05, bottom: rim - 0.4 });
+      k++;
+    }
+    this.groundHeight = (x, z) => {
+      let h = baseHeight(x, z);
+      for (const p of this.ponds) {
+        const d = Math.hypot(x - p.x, z - p.z) / p.r;
+        if (d < 1.25) {
+          const t = Math.min(1, Math.max(0, (d - 0.55) / 0.6));
+          h = Math.min(h, p.bottom + (h - p.bottom) * t * t * (3 - 2 * t));
+        }
+      }
+      return h;
     };
     const step = 1.2;
     const nx = Math.ceil((x1 - x0) / step), nz = Math.ceil((z1 - z0) / step);
@@ -597,6 +838,8 @@ export class World {
     const mesh = new THREE.Mesh(geo.build(), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     mesh.receiveShadow = true;
     group.add(mesh);
+
+    for (const p of this.ponds) this._decorPond(p, group, st, course.def.theme);
 
     // horizon : grand disque au-delà de la zone détaillée
     const far = new THREE.Mesh(
@@ -628,6 +871,8 @@ export class World {
       ico: new THREE.IcosahedronGeometry(1, 0), dode: new THREE.DodecahedronGeometry(1, 0),
       sphere: new THREE.IcosahedronGeometry(1, 1),
     };
+    this.obstacles = [];
+    const block = (x, z, r) => this.obstacles.push({ x, z, r });
     const add = (geo, mat, x, y, z, sx, sy, sz, shadow = true, ry = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
@@ -644,8 +889,10 @@ export class World {
       const x = rng.float(b.minX - 15, b.maxX + 15), z = rng.float(b.minZ - 15, b.maxZ + 15);
       const d = this._courseDist(course, x, z);
       if (d < 0.9) continue;
+      if (this.ponds.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + 0.5)) continue;
       const y = this.groundHeight(x, z);
       const big = d > 2.6;
+      if (big) block(x, z, 0.55);
       const r = rng.next();
       const ry = rng.float(0, Math.PI * 2);
       if (theme === 'prairie' || theme === 'automne') {
@@ -731,6 +978,7 @@ export class World {
         const y = this.groundHeight(x, z);
         const top = Math.max(y + 1.4, s.cell.level + 1.0);
         add(G.cyl, M.lampPost, x, (y + top) / 2, z, 0.035, top - y, 0.035);
+        block(x, z, 0.25);
         add(G.ico, M.lampGlow, x, top + 0.08, z, 0.1, 0.12, 0.1, false);
       }
     }
@@ -775,6 +1023,7 @@ export class World {
 
   update(t) {
     for (const f of this.animated) f(t);
+    if (this.waterAnims) for (const f of this.waterAnims) f(t);
     this.sky.position.copy(this.camera.position);
   }
 

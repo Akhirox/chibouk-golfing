@@ -6,21 +6,21 @@ Three.js pour le rendu, PeerJS (WebRTC) pour le réseau, aucune étape de compil
 
 ## Mettre en ligne sur GitHub Pages
 
-1. Créez un dépôt sur GitHub, par exemple `chibouk-golf`.
+1. Créez un dépôt sur GitHub, par exemple `chibouk-golfing`.
 2. Envoyez **tout le contenu de ce dossier** à la racine du dépôt :
-   `index.html`, `.nojekyll`, `css/`, `js/` et `lib/`.
+   `index.html`, `.nojekyll`, `css/`, `js/`, `lib/` et `assets/`.
    - Par l'interface web : *Add file → Upload files*, glissez les fichiers et dossiers, puis *Commit changes*.
    - En ligne de commande :
      ```bash
      git init && git add . && git commit -m "Chibouk Golf"
      git branch -M main
-     git remote add origin https://github.com/VOTRE-PSEUDO/chibouk-golf.git
+     git remote add origin https://github.com/Akhirox/chibouk-golfing.git
      git push -u origin main
      ```
 3. Dans le dépôt, allez dans **Settings → Pages**, choisissez *Source : Deploy from a branch*,
    branche `main`, dossier `/ (root)`, puis *Save*.
 4. Au bout d'une minute environ, le jeu est en ligne à l'adresse
-   `https://VOTRE-PSEUDO.github.io/chibouk-golf/`.
+   `https://akhirox.github.io/chibouk-golfing/`.
 
 > Le fichier `.nojekyll` est caché sur macOS et Linux. Vérifiez qu'il a bien été envoyé.
 
@@ -56,6 +56,7 @@ avec leur pseudo, et ne se touchent pas. Le trou suivant démarre quand tout le 
 | Vue d'ensemble du trou | `V` | Bouton œil |
 | Recentrer vers le trou | `C` | — |
 | Carte de score | `Tab` (maintenu) | Bouton tableau |
+| Afficher / masquer les personnages | Bouton personnage | Bouton personnage |
 
 La flèche indique la direction du tir et s'allonge avec la puissance ; la jauge en bas de l'écran affiche le pourcentage.
 
@@ -65,7 +66,26 @@ Score de golf classique, comparé au **PAR** de chaque trou :
 trou en un, albatros (−3), eagle (−2), birdie (−1), par, bogey (+1), double bogey (+2), triple bogey (+3)…
 
 - Balle sortie du parcours : **+1 coup** de pénalité, on rejoue depuis l'endroit du tir.
+- Balle arrêtée sur l'eau : **+1 coup** de pénalité, retour à l'endroit du tir.
 - Limite de **10 coups** par trou : au-delà, le trou est compté **11**.
+
+### L'eau
+
+Certains trous ont un **ruisseau** qui barre l'allée ou une **mare** sur le côté.
+La balle ne coule pas : elle flotte à moitié immergée, rebondit un peu en tombant dessus
+et **ricoche** si elle arrive vite. L'eau la freine beaucoup : un coup trop mou finit immobile
+sur l'eau, et la balle revient alors au point de départ du coup (+1).
+
+### Les personnages
+
+Des singes et les combattants de Chibouk Fighting (Arnaud, Louis, Niels, Rioky, Thomas) vivent autour
+du parcours : ils se baladent, dansent, discutent, se lancent dans des bagarres amicales,
+et réagissent à vos coups (ils fêtent les birdies, sursautent quand la balle tombe à l'eau…).
+Ils ne touchent jamais la balle et deviennent transparents s'ils cachent la vue.
+Chaque joueur voit sa propre troupe (elle n'est pas synchronisée en multijoueur).
+
+Le bouton **personnage** en haut à droite les masque si l'ordinateur rame. Les modèles (8,5 Mo)
+se chargent en arrière-plan, sans retarder la partie.
 
 ## Comment ça marche
 
@@ -79,8 +99,9 @@ Le générateur ajoute ensuite :
 - des **angles biseautés** dans les virages pour jouer les bandes,
 - des obstacles : **plots**, **blocs**, **portillons** à ouverture étroite, **moulinets** qui tournent,
 - des **bunkers** de sable qui freinent la balle,
+- de l'**eau** : ruisseaux à franchir et mares à éviter,
 - un trou à plat, en **entonnoir** ou en **volcan**,
-- un thème de décor : prairie, automne, désert, neige ou crépuscule.
+- un thème de décor : prairie, automne, désert, neige ou crépuscule, avec des mares autour du parcours.
 
 La difficulté augmente doucement du trou 1 au trou 9.
 
@@ -100,6 +121,7 @@ les suivants se préparent pendant que vous jouez.
 Moteur maison, à pas fixe, en mètres et secondes : gravité, roulement d'une sphère pleine sur les pentes
 (accélération à 5/7 de g·sin θ), résistance au roulement de la moquette, frottement plus fort dans le sable,
 rebonds amortis sur les bordures et les plots, sauts sur les crêtes si la balle va vite,
+flottaison sur l'eau (poussée d'Archimède amortie, ricochets),
 et capture au trou réaliste : trop rapide, la balle saute par-dessus ou tourne sur la lèvre.
 
 ### Multijoueur sans serveur
@@ -126,10 +148,12 @@ js/course.js          génération des trous et structure du parcours
 js/bot.js             joueur virtuel : vérification et estimation du PAR
 js/generator.js       génération d'un trou jouable
 js/gen-worker.js      génération en arrière-plan
-js/render.js          rendu Three.js low poly, décors par thème
+js/render.js          rendu Three.js low poly, décors par thème, eau et éclaboussures
+js/characters.js      personnages : chargement, balades, animations, interactions
 js/session.js         logique de l'hôte (salon, enchaînement des trous, scores)
 js/net.js             réseau pair-à-pair (PeerJS)
 js/score.js           termes de golf et totaux
 js/audio.js           sons synthétisés
-lib/                  three.js r185 et PeerJS 1.5.5 (licences MIT incluses)
+lib/                  three.js r185 (+ GLTFLoader, meshopt, SkeletonUtils) et PeerJS 1.5.5 (licences MIT incluses)
+assets/characters/    singe, combattants et bibliothèque d'animations (glb)
 ```

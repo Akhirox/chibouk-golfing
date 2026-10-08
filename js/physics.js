@@ -7,11 +7,21 @@ import {
 const ROLL_FACTOR = 2 / 7; // une sphère pleine qui roule accélère à 5/7 de g·sinθ
 const CAPTURE_DROP = 1.6 * BALL_R;
 
+// Eau : la balle flotte (à moitié immergée), ricoche si elle arrive vite, freine fort
+const SINK = 0.72 * BALL_R;     // enfoncement à l'équilibre
+const BUOY_K = 260;             // raideur de la poussée d'Archimède (oscillation ~2,5 Hz)
+const BUOY_C = 3.2;             // amortissement vertical (quelques rebonds visibles)
+const WATER_CONST = 0.55;       // freinage constant dans l'eau (m/s²)
+const WATER_LIN = 2.0;          // freinage proportionnel à la vitesse (1/s)
+const SKIP_SPEED = 1.5;         // vitesse mini pour un ricochet
+const STUCK_TIME = 0.9;         // temps à l'arrêt sur l'eau avant le retour au point de tir
+
 export function makeBall() {
   return {
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
     moving: false, still: 0, time: 0,
     inCup: false, lipOff: 0, holed: false, oob: false,
+    wet: false, wtouch: false, wdeep: false, water: false, wetStill: 0,
     nx: 0, ny: 1, nz: 0, // normale courante (cache)
   };
 }
@@ -23,6 +33,7 @@ export function placeBall(course, b, x, z) {
   b.vx = b.vy = b.vz = 0;
   b.moving = false; b.still = 0; b.time = 0;
   b.inCup = false; b.holed = false; b.oob = false;
+  b.wet = false; b.wtouch = false; b.wdeep = false; b.water = false; b.wetStill = 0;
   if (c) {
     const n = course.normalCell(c, x, z, {});
     b.y = course.heightCell(c, x, z) + BALL_R / n.y;
@@ -43,7 +54,58 @@ export function shootBall(course, b, angle, power) {
     vx *= k; vy *= k; vz *= k;
   }
   b.vx = vx; b.vy = vy; b.vz = vz;
-  b.moving = true; b.still = 0; b.time = 0; b.inCup = false;
+  b.moving = true; b.still = 0; b.time = 0; b.inCup = false; b.wetStill = 0;
+}
+
+// Pas de simulation sur l'eau
+function waterStep(course, b, c, wf, h, t, ev) {
+  const H = course.heightCell(c, b.x, b.z);
+  const ysup = H + BALL_R - SINK * wf;
+  let hs = Math.hypot(b.vx, b.vz);
+  if (!b.wet) {
+    b.wet = true;
+    if (ev && (hs > 0.4 || b.vy < -0.4)) ev.push({ type: 'splash', speed: Math.max(hs, -b.vy), x: b.x, z: b.z });
+  }
+  // poussée nulle quand la balle effleure l'eau, égale au poids à l'équilibre (ysup)
+  const lift = GRAVITY + BUOY_K * (ysup - b.y);
+  const touching = lift > 0;
+  const deepEntry = wf > 0.5 && !b.wdeep;
+  if (wf > 0.5) b.wdeep = true;
+  if (touching && wf > 0.5 && (!b.wtouch || deepEntry)) {
+    // contact avec la surface : ricochet si la balle file assez vite
+    if (hs > SKIP_SPEED) {
+      b.vy = Math.max(b.vy * -0.3, Math.min(1.0, 0.2 * hs));
+      b.vx *= 0.82; b.vz *= 0.82; hs *= 0.82;
+      if (ev) ev.push({ type: 'splash', speed: hs, x: b.x, z: b.z, skip: true });
+    } else if (b.vy < -0.5 && ev) ev.push({ type: 'splash', speed: -b.vy, x: b.x, z: b.z });
+  }
+  b.wtouch = touching;
+
+  let ay = -GRAVITY;
+  if (touching) {
+    ay += lift - BUOY_C * b.vy;
+    if (hs > 1e-6) {
+      const dv = ((WATER_CONST + WATER_LIN * hs) * wf + ROLL_DECEL * (1 - wf)) * h;
+      if (hs <= dv) { b.vx = 0; b.vz = 0; hs = 0; } else { const f = 1 - dv / hs; b.vx *= f; b.vz *= f; hs *= f; }
+    }
+  }
+  b.vy += ay * h;
+  b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
+  if (b.y < H - 0.06) { b.y = H - 0.06; if (b.vy < 0) b.vy = 0; }
+  collideAll(course, b, c, t, ev);
+
+  // balle immobile sur l'eau : retour au point de tir
+  if (touching && hs < 0.12) {
+    b.wetStill += h;
+    if (b.wetStill > STUCK_TIME) {
+      b.vx = b.vy = b.vz = 0;
+      b.moving = false;
+      if (wf > 0.5) {
+        b.water = true;
+        if (ev) ev.push({ type: 'water', x: b.x, z: b.z });
+      } else if (ev) ev.push({ type: 'stop' });
+    }
+  } else b.wetStill = 0;
 }
 
 const N = { x: 0, y: 1, z: 0 };
@@ -133,6 +195,11 @@ function substep(course, b, h, t, ev) {
     }
     return;
   }
+  if (c.waters.length) {
+    const wf = course.waterFactor(c, b.x, b.z);
+    if (wf > 0) { waterStep(course, b, c, wf, h, t, ev); return; }
+  }
+  if (b.wet) { b.wet = false; b.wtouch = false; b.wdeep = false; b.wetStill = 0; }
   const nx = b.nx, ny = b.ny, nz = b.nz;
   const H = course.heightCell(c, b.x, b.z);
   const gap = (b.y - H) * ny - BALL_R;
@@ -243,7 +310,7 @@ function substep(course, b, h, t, ev) {
 
 // Avance la simulation de dt secondes. t = horloge du trou (obstacles mobiles).
 export function stepBall(course, b, dt, t, ev) {
-  if (b.holed || b.oob) return;
+  if (b.holed || b.oob || b.water) return;
   if (!b.moving) {
     // un obstacle mobile peut pousser une balle à l'arrêt
     const c = course.cellAt(b.x, b.z);

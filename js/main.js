@@ -7,6 +7,7 @@ import { BALL_COLORS, HOLES } from './constants.js';
 import { termFor, formatToPar, totals, rankPlayers, tierClass } from './score.js';
 import { generateHole } from './generator.js';
 import { sfx, unlockAudio, isMuted, setMuted } from './audio.js';
+import { Characters } from './characters.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -47,6 +48,7 @@ const game = new Game(world, canvas, {
     S.myStrokes = strokes;
     const par = S.def?.par ?? 3;
     const term = termFor(strokes, par, holed);
+    if (S.def) chars.react('holed', { tier: holed ? term.tier : 'bad', x: S.def.cup.x, z: S.def.cup.z });
     showBigTerm(term, holed ? `${strokes} coup${strokes > 1 ? 's' : ''} · par ${par}` : `${strokes} coups comptés`);
     sfx(term.tier === 'ace' || term.tier === 'great' ? 'great' : term.tier === 'good' ? 'good' : term.tier === 'par' ? 'good' : 'meh');
     toHost({ t: 'done', index: S.index, strokes, holed });
@@ -60,17 +62,23 @@ const game = new Game(world, canvas, {
     $('power-val').textContent = `${Math.round(power * 100)} %`;
   },
   onAimEnd() { $('power').classList.remove('on'); },
+  onGameEvent(type, data) { chars.react(type, data); },
   onPos(x, y, z, m) {
     if (S.mode === 'solo' || S.phase !== 'playing') return;
     toHost({ t: 'pos', x: +x.toFixed(3), y: +y.toFixed(3), z: +z.toFixed(3), m });
   },
 });
 
+// personnages autour du parcours (chargés en arrière-plan)
+const chars = new Characters(world);
+chars.load();
+
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt, now / 1000);
+  chars.update(dt, { ball: game.attract ? null : game.ball, target: game.rig.target });
   world.render();
   requestAnimationFrame(loop);
 }
@@ -80,6 +88,7 @@ function attract() {
   const seed = Math.random().toString(36).slice(2, 8);
   const def = generateHole(seed, 2 + Math.floor(Math.random() * 6), { skipPar: true });
   game.loadAttract(def);
+  chars.setCourse(game.course, { attract: true });
 }
 attract();
 
@@ -172,6 +181,7 @@ function onServer(msg) {
         const p = S.players.find((q) => q.id === msg.id);
         if (p && S.def) {
           const t = termFor(msg.strokes, S.def.par, msg.holed);
+          if (msg.holed && (t.tier === 'ace' || t.tier === 'great' || t.tier === 'good')) chars.react('holed', { tier: t.tier, x: S.def.cup.x, z: S.def.cup.z });
           notice(`${p.name} · ${t.label.replace(/ !$/, '')}${msg.holed ? ` (${msg.strokes})` : ''}`);
         }
       }
@@ -390,6 +400,7 @@ function startHole(msg) {
   for (const id of [...game.ghosts.keys()]) if (!ids.has(id)) game.removeGhost(id);
   const me = S.players.find((p) => p.id === S.selfId);
   game.loadHole(msg.def, me ? me.color : profile.color);
+  chars.setCourse(game.course);
   renderHudPlayers();
   updateHud();
   notice(`Trou ${msg.index + 1} · Par ${msg.def.par}${msg.def.length ? ` · ${Math.round(msg.def.length)} m` : ''}`);
@@ -591,6 +602,13 @@ function renderMute() {
 }
 $('btn-mute').addEventListener('click', () => { setMuted(!isMuted()); renderMute(); });
 renderMute();
+function renderChars() {
+  const person = '<circle cx="12" cy="6" r="3" fill="currentColor"/><path d="M6 21v-5a6 6 0 0112 0v5" fill="currentColor"/>';
+  $('btn-chars').innerHTML = `<svg viewBox="0 0 24 24">${person}${chars.enabled ? '' : '<path d="M4 4l16 16" stroke="#0c0c0d" stroke-width="4"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="2"/>'}</svg>`;
+  $('btn-chars').style.opacity = chars.enabled ? '1' : '0.6';
+}
+$('btn-chars').addEventListener('click', () => { chars.setEnabled(!chars.enabled); renderChars(); });
+renderChars();
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab' && S.phase === 'playing' && S.index >= 0) {
@@ -624,4 +642,4 @@ if (salon) {
 }
 
 // accès debug pour les tests
-window.__cg = { S, game, world };
+window.__cg = { S, game, world, chars };

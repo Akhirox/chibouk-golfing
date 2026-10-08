@@ -11,7 +11,7 @@ export function heuristicPar(def) {
     if (c.ramp) ramps++;
     if (c.feat) feats++;
   }
-  const obst = def.posts.length + def.blocks.length / 2 + def.mills.length * 2 + def.sands.length;
+  const obst = def.posts.length + def.blocks.length / 2 + def.mills.length * 2 + def.sands.length + (def.waters || []).length * 1.5;
   const d = 1.3 + n * 0.17 + turns * 0.25 + ramps * 0.15 + feats * 0.08 + obst * 0.15;
   return Math.max(2, Math.min(6, Math.round(d)));
 }
@@ -28,6 +28,8 @@ export function generateHole(seed, index, opts = {}) {
     const course = new Course(def);
     const est = estimatePar(course, `${seed}#${index}#${attempt}`, opts.runs || 2);
     if (!est.ok) continue;
+    // trou injouable en pratique (trop de pénalités pour sa longueur) : on en tire un autre
+    if (attempt < 30 && (est.avg >= 5.5 || est.avg > 2.2 + est.length / 3.5)) continue;
     def.par = est.par;
     def.length = +est.length.toFixed(1);
     def.botAvg = est.avg;

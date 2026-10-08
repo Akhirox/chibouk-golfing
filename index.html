@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
-  <script type="importmap">{ "imports": { "three": "./lib/three.module.min.js" } }</script>
+  <script type="importmap">{ "imports": { "three": "./lib/three.module.min.js", "three/addons/": "./lib/addons/" } }</script>
   <script src="lib/peerjs.min.js"></script>
   <script type="module" src="js/main.js"></script>
 </head>
@@ -109,6 +109,7 @@
         <button id="btn-view" class="icon-btn" title="Vue du trou (V)" aria-label="Vue du trou">
           <svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
         </button>
+        <button id="btn-chars" class="icon-btn" title="Personnages autour du parcours" aria-label="Personnages"></button>
         <button id="btn-mute" class="icon-btn" title="Son" aria-label="Son"></button>
         <button id="btn-quit" class="icon-btn" title="Quitter la partie" aria-label="Quitter">
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>

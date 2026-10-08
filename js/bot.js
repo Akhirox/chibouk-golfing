@@ -143,7 +143,7 @@ function expectRemaining(d) {
 
 function shotCost(course, df, b, startCost) {
   if (b.holed) return 0;
-  if (b.oob) return 1 + startCost;
+  if (b.oob || b.water) return 1 + startCost;
   let c = expectRemaining(df.query(b.x, b.z));
   if (course.cellAt(b.x, b.z) && course.isSand(course.cellAt(b.x, b.z), b.x, b.z)) c += 0.15;
   return c;
@@ -204,7 +204,7 @@ function playHole(course, df, rng) {
     const b = simulate(course, x, z, ang, p, t);
     t += 7.3;
     if (b.holed) return { strokes, holed: true };
-    if (b.oob) { strokes++; continue; }
+    if (b.oob || b.water) { strokes++; continue; }
     x = b.x; z = b.z;
   }
   return { strokes, holed: false };

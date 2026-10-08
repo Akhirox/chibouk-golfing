@@ -6,6 +6,7 @@ import {
 
 const HALF = TILE / 2;
 const CHAMFER = 0.62;
+export const WATER_BANK = 0.08; // largeur de la berge (transition terre / eau)
 export const THEMES = ['prairie', 'automne', 'desert', 'neige', 'crepuscule'];
 
 const key = (i, j) => ((i + 512) << 10) | (j + 512);
@@ -152,7 +153,7 @@ export function buildDef(rng, seed, index) {
   }
 
   // --- obstacles -------------------------------------------------------------------
-  const posts = [], blocks = [], mills = [], sands = [];
+  const posts = [], blocks = [], mills = [], sands = [], waters = [];
   let millCount = 0;
   const budget = 1 + Math.round(diff * 4);
   let used = 0;
@@ -176,7 +177,11 @@ export function buildDef(rng, seed, index) {
     const opts = [['none', 2.2], ['posts', 2.5]];
     if (straight && flat) opts.push(['gate', 1.6], ['block', 1.3]);
     if (straight && flat && millCount === 0) opts.push(['mill', 1.2 + diff]);
-    if (flat) opts.push(['sand', 1.2]);
+    if (flat) opts.push(['sand', 1.1]);
+    if (flat && straight && waters.length < 2) {
+      if (!waters.some((w) => w.type === 'river')) opts.push(['river', 2.1]);
+      opts.push(['pond', 1.7]);
+    }
     const t = rng.weighted(opts);
     if (t === 'none') continue;
     used++;
@@ -239,6 +244,20 @@ export function buildDef(rng, seed, index) {
       const r = rng.float(0.32, 0.5);
       const u = rng.float(-0.35, 0.35), v = rng.float(-0.35, 0.35);
       sands.push({ x: +(cx + u).toFixed(3), z: +(cz + v).toFixed(3), r: +r.toFixed(3) });
+    } else if (t === 'river') {
+      // ruisseau qui traverse toute la largeur de l'allée
+      const ha = rng.float(0.16, 0.28);
+      const along = rng.float(-0.25, 0.25);
+      waters.push({
+        type: 'river', x: +(cx + ax * along).toFixed(3), z: +(cz + az * along).toFixed(3),
+        ax, az, ha: +ha.toFixed(3), hb: HALF + 0.05,
+      });
+    } else if (t === 'pond') {
+      // mare décalée sur un côté : il reste toujours un passage
+      const r = rng.float(0.3, 0.5);
+      const side = rng.sign() * rng.float(0.28, HALF - r - 0.1);
+      const along = rng.float(-0.35, 0.35);
+      waters.push({ type: 'pond', x: +(cx + ax * along + lx * side).toFixed(3), z: +(cz + az * along + lz * side).toFixed(3), r: +r.toFixed(3) });
     }
   }
 
@@ -258,7 +277,7 @@ export function buildDef(rng, seed, index) {
       if (c.cupFeat) o.cupFeat = c.cupFeat;
       return o;
     }),
-    tee, cup, posts, blocks, mills, sands,
+    tee, cup, posts, blocks, mills, sands, waters,
     decorSeed: Math.floor(rng.next() * 1e9),
     par: 3,
   };
@@ -284,7 +303,7 @@ export class Course {
         cupFeat: c.cupFeat || null,
         cx: c.i * TILE,
         cz: c.j * TILE,
-        segs: [], posts: [], mills: [], sands: [],
+        segs: [], posts: [], mills: [], sands: [], waters: [],
         walls: [],
       };
       this.map.set(key(c.i, c.j), cell);
@@ -357,6 +376,7 @@ export class Course {
     this.mills = (def.mills || []).map((m) => ({ ...m, cell: this.cellAt(m.x, m.z), rad: 0.04, h: 0.16, kind: 'mill', e: 0.6 }));
     for (const m of this.mills) this.posts.push({ x: m.x, z: m.z, r: 0.07, h: 0.3, cell: m.cell, e: POST_RESTITUTION, hub: true });
     this.sands = (def.sands || []).map((s) => ({ ...s, cell: this.cellAt(s.x, s.z) }));
+    this.waters = (def.waters || []).map((w) => ({ ...w, cell: this.cellAt(w.x, w.z) }));
 
     // répartition par case (détection large)
     const M = BALL_R * 2 + 0.05;
@@ -369,6 +389,7 @@ export class Course {
       for (const p of this.posts) if (inCell(c, p.x - p.r, p.z - p.r, p.x + p.r, p.z + p.r)) c.posts.push(p);
       for (const m of this.mills) if (inCell(c, m.x - m.half, m.z - m.half, m.x + m.half, m.z + m.half)) c.mills.push(m);
       for (const s of this.sands) if (s.cell === c) c.sands.push(s);
+      for (const w of this.waters) if (w.cell === c) c.waters.push(w);
     }
     this.allSegs = allSegs;
   }
@@ -425,6 +446,20 @@ export class Course {
     const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
     out.x = nx * inv; out.y = inv; out.z = nz * inv;
     return out;
+  }
+
+  // 0 = terre ferme, 1 = pleine eau (transition douce sur les berges)
+  waterFactor(c, x, z) {
+    let best = 0;
+    for (const w of c.waters) {
+      let d;
+      if (w.type === 'pond') d = w.r - Math.hypot(x - w.x, z - w.z);
+      else d = w.ha - Math.abs((x - w.x) * w.ax + (z - w.z) * w.az);
+      if (d <= 0) continue;
+      const f = d >= WATER_BANK ? 1 : smooth(d / WATER_BANK);
+      if (f > best) best = f;
+    }
+    return best;
   }
 
   isSand(c, x, z) {

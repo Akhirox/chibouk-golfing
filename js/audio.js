@@ -59,6 +59,21 @@ function click(c, t, freq, dur, gain, q = 2) {
   src.start(t);
 }
 
+function splashNoise(c, t, dur, gain) {
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c, dur);
+  const f = c.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(2600, t);
+  f.frequency.exponentialRampToValueAtTime(380, t + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t);
+}
+
 const last = {};
 export function sfx(type, intensity = 1) {
   if (muted) return;
@@ -101,6 +116,14 @@ export function sfx(type, intensity = 1) {
       break;
     case 'meh':
       [392, 330].forEach((f, i) => tone(c, now + 0.55 + i * 0.14, f, 0.3, 0.13, 'triangle'));
+      break;
+    case 'splash':
+      splashNoise(c, now, 0.18 + 0.2 * k, 0.35 * k + 0.08);
+      break;
+    case 'plouf':
+      splashNoise(c, now, 0.45, 0.5);
+      tone(c, now, 300, 0.25, 0.25, 'sine', 0.45);
+      tone(c, now + 0.08, 520, 0.12, 0.12, 'sine', 0.6);
       break;
     case 'oob':
       tone(c, now, 400, 0.45, 0.2, 'sawtooth', 0.35);

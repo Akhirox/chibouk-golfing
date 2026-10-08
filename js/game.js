@@ -291,8 +291,13 @@ export class Game {
     this.cb.onAim(power);
   }
 
+  _notify(type, data) {
+    if (this.cb.onGameEvent) this.cb.onGameEvent(type, { x: this.ball.x, z: this.ball.z, ...data });
+  }
+
   shoot(angle, power) {
     if (!this.canShoot) return;
+    this._notify('shot', { power });
     this.strokes++;
     this.lastRest = { x: this.ball.x, z: this.ball.z };
     shootBall(this.course, this.ball, angle, power);
@@ -304,6 +309,7 @@ export class Game {
   // ------------------------------------------------------------------ boucle
   update(dt, now) {
     if (!this.course) return;
+    this.world.updateFx(dt);
     if (this.attract) {
       this.world.update(now);
       this.rig.yaw += dt * 0.08;
@@ -352,10 +358,23 @@ export class Game {
       m.position.set(this.ball.x, this.ball.y, this.ball.z);
     }
     if (this.state === 'sinking') this._updateSink(dt);
-    if (this.state === 'oob') {
+    if (this.state === 'oob' || this.state === 'water') {
       this.oobT -= dt;
-      if (m) m.position.set(this.ball.x, this.ball.y, this.ball.z);
+      if (m) {
+        // la balle flotte encore un instant avant de revenir au point de tir
+        const bob = this.state === 'water' ? Math.sin(this.holeTime * 7) * 0.006 * Math.min(1, this.oobT) : 0;
+        m.position.set(this.ball.x, this.ball.y + bob, this.ball.z);
+      }
       if (this.oobT <= 0) this._afterOob();
+    }
+    // sillage quand la balle glisse sur l'eau
+    if (this.state === 'rolling' && this.ball.wet) {
+      this.wakeT = (this.wakeT || 0) - dt;
+      if (this.wakeT <= 0 && Math.hypot(this.ball.vx, this.ball.vz) > 0.05) {
+        this.wakeT = 0.2;
+        const c = this.course.cellAt(this.ball.x, this.ball.z);
+        if (c) this.world.ripple(this.ball.x, c.level + 0.012, this.ball.z, 0.1);
+      }
     }
 
     // anneau « à toi de jouer »
@@ -420,6 +439,22 @@ export class Game {
         this.oobT = 0.9;
         sfx('oob');
         this.cb.onToast('Hors limites · +1', 'warn');
+        this._notify('oob');
+        break;
+      case 'splash': {
+        const c = this.course.cellAt(e.x, e.z);
+        const y = c ? c.level + 0.012 : this.ball.y;
+        this.world.splash(e.x, y, e.z, e.speed / 2.5);
+        sfx('splash', Math.min(1, e.speed / 3));
+        if (!e.skip) this._notify('splash');
+        break;
+      }
+      case 'water':
+        this.state = 'water';
+        this.oobT = 1.4;
+        sfx('plouf');
+        this.cb.onToast('Plouf ! Retour au point de tir · +1', 'warn');
+        this._notify('water');
         break;
       case 'stop':
         if (this.state === 'rolling') this._afterStop();
